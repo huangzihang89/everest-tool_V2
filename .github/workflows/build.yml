@@ -1,0 +1,86 @@
+
+  name: Build Executable
+
+  on:
+    push:
+      branches: [ main, master ]
+    workflow_dispatch:
+
+  jobs:
+    build-windows:
+      runs-on: windows-latest
+      steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller requests
+
+      - name: Build Windows EXE
+        run: |
+          pyinstaller --onefile --console --clean --name "Everest_Tool" --hidden-import=requests --hidden-import=urllib3 --hidden-import=certifi --hidden-import=charset_normalizer --hidden-import=idna everest_batch_query.py
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Everest_Tool_Windows
+          path: dist/Everest_Tool.exe
+
+    build-macos-intel:
+      runs-on: macos-15-intel
+      steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller requests
+
+      - name: Build macOS Intel executable
+        run: |
+          pyinstaller --onefile --console --clean --name "Everest_Tool" --hidden-import=requests --hidden-import=urllib3 --hidden-import=certifi --hidden-import=charset_normalizer --hidden-import=idna everest_batch_query.py
+
+      - name: Upload macOS Intel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Everest_Tool_macOS_Intel
+          path: dist/Everest_Tool
+
+    build-macos-arm:
+      runs-on: macos-latest
+      steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller requests
+
+      - name: Build macOS ARM executable
+        run: |
+          pyinstaller --onefile --console --clean --name "Everest_Tool" --hidden-import=requests --hidden-import=urllib3 --hidden-import=certifi --hidden-import=charset_normalizer --hidden-import=idna everest_batch_query.py
+
+      - name: Upload macOS ARM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Everest_Tool_macOS_AppleSilicon
+          path: dist/Everest_Tool
