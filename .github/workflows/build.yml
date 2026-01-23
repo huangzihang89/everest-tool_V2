@@ -25,7 +25,7 @@
 
       - name: Build Windows EXE
         run: |
-          pyinstaller --onefile --console --clean --name "Everest_Tool" --hidden-import=requests --hidden-import=urllib3 --hidden-import=certifi --hidden-import=charset_normalizer --hidden-import=idna everest_batch_query.py
+          pyinstaller --onefile --console --clean --name "Everest_Tool" --hidden-import=requests --hidden-import=urllib3 --hidden-import=certifi --hidden-import=charset_normalizer --hidden-import=idna everest_batch_query_v2.py
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
@@ -51,7 +51,7 @@
 
       - name: Build macOS Intel executable
         run: |
-          pyinstaller --onefile --console --clean --name "Everest_Tool" --hidden-import=requests --hidden-import=urllib3 --hidden-import=certifi --hidden-import=charset_normalizer --hidden-import=idna everest_batch_query.py
+          pyinstaller --onefile --console --clean --name "Everest_Tool" --hidden-import=requests --hidden-import=urllib3 --hidden-import=certifi --hidden-import=charset_normalizer --hidden-import=idna everest_batch_query_v2.py
 
       - name: Upload macOS Intel artifact
         uses: actions/upload-artifact@v4
@@ -77,7 +77,7 @@
 
       - name: Build macOS ARM executable
         run: |
-          pyinstaller --onefile --console --clean --name "Everest_Tool" --hidden-import=requests --hidden-import=urllib3 --hidden-import=certifi --hidden-import=charset_normalizer --hidden-import=idna everest_batch_query.py
+          pyinstaller --onefile --console --clean --name "Everest_Tool" --hidden-import=requests --hidden-import=urllib3 --hidden-import=certifi --hidden-import=charset_normalizer --hidden-import=idna everest_batch_query_v2.py
 
       - name: Upload macOS ARM artifact
         uses: actions/upload-artifact@v4
