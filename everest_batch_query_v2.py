@@ -433,45 +433,19 @@ class EverestBatchQueryV2:
         }
         """
         debug_print(f"========== [v2.0] 开始查询域名: {domain} ==========")
+        result = self._query_domain_once_v2(domain)
 
-        # 带重试的查询逻辑
-        for attempt in range(MAX_RETRIES):
-            if attempt > 0:
-                debug_print(f"第 {attempt + 1} 次重试，等待 {RETRY_DELAY} 秒...")
-                time.sleep(RETRY_DELAY)
-
-            result = self._query_domain_once_v2(domain)
-
-            # 检查结果是否有效
-            if result["success"]:
-                volume = result.get("volume", "")
-                # 如果 volume 有效（非空、非N/A），直接返回
-                if volume and volume != "N/A" and volume.strip() != "":
-                    debug_print(f"========== 域名 {domain} 查询完成 ==========")
-                    debug_print(f"  有效子域名数: {len(result['subdomains'])}, 被过滤: {len(result['filtered_out'])}, 发信量: {result['volume']}")
-                    return result
-                else:
-                    # volume 无效，但有子域名，可能是频率限制导致
-                    if result.get("subdomains"):
-                        debug_print(f"警告: volume 为空或 N/A，可能是频率限制，准备重试...")
-                        continue
-                    else:
-                        # 没有有效子域名
-                        debug_print(f"========== 域名 {domain} 无有效子域名 ==========")
-                        return result
+        if result["success"]:
+            volume = result.get("volume", "")
+            if volume and volume != "N/A" and volume.strip() != "":
+                debug_print(f"========== 域名 {domain} 查询完成 ==========")
+                debug_print(f"  有效子域名数: {len(result['subdomains'])}, 被过滤: {len(result['filtered_out'])}, 发信量: {result['volume']}")
             else:
-                # 查询失败，检查是否是可重试的错误
-                error = result.get("error", "")
-                if "429" in str(error) or "REQUEST_ERROR" in str(error):
-                    debug_print(f"请求错误，准备重试: {error}")
-                    continue
-                else:
-                    # 不可重试的错误，直接返回
-                    debug_print(f"========== 域名 {domain} 查询失败: {error} ==========")
-                    return result
+                debug_print(f"========== 域名 {domain} 无有效子域名 ==========")
+            return result
 
-        # 重试用尽，返回最后一次结果
-        debug_print(f"========== 域名 {domain} 重试次数用尽 ==========")
+        error = result.get("error", "")
+        debug_print(f"========== 域名 {domain} 查询失败: {error} ==========")
         return result
 
     def _query_domain_once_v2(self, domain: str) -> dict:
@@ -489,21 +463,30 @@ class EverestBatchQueryV2:
 
         # 步骤1：搜索主域名
         search_result = self.step1_create_search(domain)
-        if not search_result["success"]:
-            debug_print(f"步骤1失败: {search_result['error']}")
-            result["error"] = search_result["error"]
-            return result
-
-        search_id = search_result["search_id"]
-        matches = search_result["matches"]
-
-        if not search_id:
-            debug_print("错误: 未获取到 search_id")
-            result["error"] = "NO_SEARCH_ID"
-            return result
-
-        # 提取所有匹配的域名
+        search_id = search_result.get("search_id")
+        matches = search_result.get("matches", []) if search_result.get("success") else []
         all_domains = [self._extract_domain_name(m) for m in matches]
+
+        if (not search_result.get("success")) or (not search_id) or (not all_domains):
+            debug_print(f"步骤1结果异常，等待 {RETRY_DELAY} 秒后重试一次...")
+            time.sleep(RETRY_DELAY)
+            search_result = self.step1_create_search(domain)
+            if not search_result.get("success"):
+                debug_print(f"步骤1重试失败: {search_result.get('error')}")
+                result["error"] = search_result.get("error")
+                return result
+            search_id = search_result.get("search_id")
+            matches = search_result.get("matches", [])
+            if not search_id:
+                debug_print("错误: 重试后仍未获取到 search_id")
+                result["error"] = "NO_SEARCH_ID"
+                return result
+            all_domains = [self._extract_domain_name(m) for m in matches]
+            if not all_domains:
+                debug_print("错误: 重试后仍没有匹配的域名")
+                result["error"] = "NO_MATCHES_FOUND"
+                return result
+
         debug_print(f"API 返回 {len(all_domains)} 个匹配域名: {all_domains}")
 
         # ========== v2.0 核心：过滤子域名 ==========
@@ -517,29 +500,69 @@ class EverestBatchQueryV2:
         result["filtered_out"] = filtered_out
 
         if not valid_subdomains:
-            debug_print("警告: 没有有效的子域名")
-            result["error"] = "NO_VALID_SUBDOMAINS"
-            result["success"] = True  # 不算错误，只是没有数据
-            return result
+            debug_print(f"警告: 没有有效的子域名，等待 {RETRY_DELAY} 秒后重试一次...")
+            time.sleep(RETRY_DELAY)
+            retry_search = self.step1_create_search(domain)
+            if not retry_search["success"]:
+                debug_print(f"步骤1重试失败: {retry_search['error']}")
+                result["error"] = retry_search["error"]
+                return result
+            search_id = retry_search["search_id"]
+            matches = retry_search["matches"]
+            if not search_id:
+                debug_print("错误: 重试后仍未获取到 search_id")
+                result["error"] = "NO_SEARCH_ID"
+                return result
+            all_domains = [self._extract_domain_name(m) for m in matches]
+            valid_subdomains, filtered_out = filter_subdomains(all_domains, domain)
+            debug_print(f"[v2.0] 重试后过滤结果:")
+            debug_print(f"  有效子域名 ({len(valid_subdomains)}): {valid_subdomains}")
+            debug_print(f"  被过滤掉 ({len(filtered_out)}): {filtered_out}")
+            result["subdomains"] = valid_subdomains
+            result["filtered_out"] = filtered_out
+            if not valid_subdomains:
+                debug_print("警告: 重试后仍没有有效的子域名")
+                result["error"] = "NO_VALID_SUBDOMAINS"
+                result["success"] = True  # 不算错误，只是没有数据
+                return result
 
         # 步骤2：只用有效子域名确认匹配，获取聚合发信量
         valid_matches = ",".join(valid_subdomains)
         confirm_result = self.step2_confirm_matches(search_id, valid_matches)
         if not confirm_result["success"]:
-            debug_print(f"步骤2失败: {confirm_result['error']}")
-            result["error"] = confirm_result["error"]
-            return result
-
-        # 获取聚合发信量
-        result["volume"] = confirm_result.get("volume", "N/A")
+            debug_print(f"步骤2失败，等待 {RETRY_DELAY} 秒后重试一次: {confirm_result.get('error')}")
+            time.sleep(RETRY_DELAY)
+            confirm_result = self.step2_confirm_matches(search_id, valid_matches)
+            if not confirm_result["success"]:
+                debug_print(f"步骤2重试失败: {confirm_result.get('error')}")
+                result["error"] = confirm_result.get("error")
+                return result
+        # 获取聚合发信量（空值也重试一次）
+        volume = confirm_result.get("volume", "N/A")
+        if not volume or str(volume).strip().upper() == "N/A":
+            debug_print(f"聚合发信量为空或 N/A，等待 {RETRY_DELAY} 秒后重试一次...")
+            time.sleep(RETRY_DELAY)
+            confirm_retry = self.step2_confirm_matches(search_id, valid_matches)
+            if confirm_retry["success"]:
+                volume = confirm_retry.get("volume", "N/A")
+            else:
+                debug_print(f"步骤2重试获取发信量失败: {confirm_retry.get('error')}")
+        result["volume"] = volume
         debug_print(f"聚合发信量（仅子域名）: {result['volume']}")
 
         # 步骤3：获取 ESP 情报（也是仅针对子域名的）
         esp_result = self.step3_get_esps(search_id)
-        if esp_result["success"]:
-            result["esps"] = esp_result["esps"]
+        esps = esp_result.get("esps") if esp_result.get("success") else None
+        if (not esp_result.get("success")) or (not esps):
+            debug_print(f"步骤3结果异常，等待 {RETRY_DELAY} 秒后重试一次: {esp_result.get('error')}")
+            time.sleep(RETRY_DELAY)
+            esp_result = self.step3_get_esps(search_id)
+            if esp_result.get("success") and esp_result.get("esps"):
+                result["esps"] = esp_result["esps"]
+            else:
+                debug_print(f"步骤3重试失败（非致命）: {esp_result.get('error')}")
         else:
-            debug_print(f"步骤3失败（非致命）: {esp_result.get('error')}")
+            result["esps"] = esps
 
         result["success"] = True
         return result
